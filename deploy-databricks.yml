@@ -1,0 +1,48 @@
+name: Deploy to Databricks (Free Tier)
+
+on:
+  push:
+    branches:
+      - main # Runs the workflow when code is pushed to the main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install Databricks CLI
+        run: pip install databricks-cli
+
+      - name: Authenticate Databricks CLI
+        run: |
+          databricks configure --host ${{ secrets.DATABRICKS_HOST }} --token ${{ secrets.DATABRICKS_TOKEN }}
+
+      - name: Upload Notebook to Databricks
+        run: |
+          databricks workspace import ./notebooks/my_notebook.py /Workspace/Users/${{ secrets.DATABRICKS_USER }}/my_notebook.py --format SOURCE --overwrite
+
+      - name: Create & Run Job on Free Tier Cluster
+        run: |
+          JOB_ID=$(databricks jobs create --json '
+          {
+            "name": "My Free Tier Job",
+            "new_cluster": {
+              "spark_version": "11.3.x-scala2.12",
+              "node_type_id": "i3.xlarge",
+              "num_workers": 0
+            },
+            "notebook_task": {
+              "notebook_path": "/Workspace/Users/${{ secrets.DATABRICKS_USER }}/my_notebook.py"
+            }
+          }' | jq -r '.job_id')
+
+          echo "Job ID: $JOB_ID"
+          databricks jobs run-now --job-id $JOB_ID
